@@ -1,9 +1,11 @@
-// 1. Phased Idioms (Parsed first to prevent individual word collision)
+// Phase 1: Multi-word phrases & idioms (parsed first to prevent
+// individual word collisions from scrambling idiomatic meaning)
 const JIVE_PHRASES: [string, string][] = [
   ["give me a break", "cut me some slack, Jack"],
   ["what is going on", "what's the buzz"],
   ["everything is fine", "everything is kopasetic"],
   ["what are you doing", "what's your story"],
+  ["wants to know", "is itchin' to get hip to"],
   ["i understand", "i got my boots on"],
   ["do you understand", "ya dig"],
   ["don't worry", "hang loose, blood"],
@@ -14,10 +16,10 @@ const JIVE_PHRASES: [string, string][] = [
   ["shaking hands", "laying some skin"]
 ];
 
-// 2. Individual Token Mapping
+// Phase 2: Individual token mapping
 const JIVE_WORDS: { [key: string]: string } = {
   // People & Roles
-  "hello": "what's the buzz",
+  "hello": "what's shakin'",
   "friend": "gate",
   "friends": "gates",
   "man": "cat",
@@ -31,13 +33,14 @@ const JIVE_WORDS: { [key: string]: string } = {
   "stewardess": "flight canary",
   "musician": "alligator",
   "people": "folks",
-  
+
   // Actions & Verbs
   "understand": "dig",
-  "know": "hip to",
+  "know": "get hip to",
   "talk": "beat up the chops",
   "speak": "blow some jargon",
   "leave": "make tracks",
+  "left": "made tracks from",
   "go": "cruise",
   "hurry": "step on the gas",
   "work": "gig",
@@ -49,7 +52,7 @@ const JIVE_WORDS: { [key: string]: string } = {
   "see": "spy",
   "eat": "peck",
   "dance": "hop",
-  
+
   // Adjectives, Descriptions & Places
   "good": "kopasetic",
   "great": "the tops",
@@ -71,9 +74,18 @@ const JIVE_FLAVOR_SUFFIXES = [
   ", ya dig?",
   ", solid!",
   "... slide me some skin!",
-  ", straight up.",
-  ", layout!"
+  ", straight up."
 ];
+
+// Deterministic hash so the live-rendered output stays stable while typing
+// (a Math.random() suffix would flicker on every keystroke)
+function hashText(text: string): number {
+  let hash = 0;
+  for (let i = 0; i < text.length; i++) {
+    hash = (hash * 31 + text.charCodeAt(i)) | 0;
+  }
+  return Math.abs(hash);
+}
 
 export function translateToJive(englishText: string): string {
   if (!englishText.trim()) return "";
@@ -81,16 +93,16 @@ export function translateToJive(englishText: string): string {
   // Normalize input while protecting core sentence architecture
   let workingText = englishText.toLowerCase();
 
-  // Phase 1: Translate multi-word phrases/idioms first
+  // Phase 1: Translate multi-word phrases/idioms first via regex pattern matching
   for (const [englishPhrase, jivePhrase] of JIVE_PHRASES) {
-    const regex = new RegExp(`\\b${englishPhrase}\\b`, 'g');
+    const regex = new RegExp(`\\b${englishPhrase}\\b`, "g");
     workingText = workingText.replace(regex, jivePhrase);
   }
 
-  // Phase 2: Translate individual tokens
-  let words = workingText.split(/(\s+|\b)/);
-  let translatedWords = words.map((token) => {
-    // Only translate if it matches a dictionary key clean
+  // Phase 2: Split into tokens (keeping whitespace and punctuation intact
+  // so the sentence rebuilds in its original order and spacing)
+  const words = workingText.split(/(\s+|\b)/);
+  const translatedWords = words.map((token) => {
     const cleanToken = token.toLowerCase().trim();
     if (JIVE_WORDS[cleanToken]) {
       return JIVE_WORDS[cleanToken];
@@ -101,17 +113,17 @@ export function translateToJive(englishText: string): string {
   let result = translatedWords.join("");
 
   // Clean up any double spaces or broken formatting from regex splits
-  result = result.replace(/\s+/g, " ").trim();
+  result = result.replace(/[^\S\n]+/g, " ").trim();
 
-  // Capitalize sentence structures
+  // Capitalize sentence start
   result = result.charAt(0).toUpperCase() + result.slice(1);
 
-  // Phase 3: Sentence contextual dynamic flavor
-  if (words.length > 5 && Math.random() > 0.4) {
-    const randomFlavor = JIVE_FLAVOR_SUFFIXES[Math.floor(Math.random() * JIVE_FLAVOR_SUFFIXES.length)];
-    // Ensure it doesn't duplicate a question mark horribly
-    if (!result.endsWith('?') && !result.endsWith('!')) {
-      result += randomFlavor;
+  // Phase 3: Contextual flavor suffix on longer sentences
+  const seed = hashText(englishText.trim());
+  if (words.length > 5 && seed % 5 > 1) {
+    const flavor = JIVE_FLAVOR_SUFFIXES[seed % JIVE_FLAVOR_SUFFIXES.length];
+    if (!result.endsWith("?") && !result.endsWith("!")) {
+      result = result.replace(/\.$/, "") + flavor;
     }
   }
 
