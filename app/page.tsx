@@ -40,6 +40,11 @@ export default function Home() {
         </h1>
         <p className="mt-3 text-zinc-400">
           Lay down your square English and watch it come back smooth, cat.
+          <br />
+          <span className="text-sm text-zinc-500">
+            Powered by the 1945 <em>Hepcats Jive Talk Dictionary</em> &mdash; over a
+            thousand authentic words &amp; phrases.
+          </span>
         </p>
       </header>
 

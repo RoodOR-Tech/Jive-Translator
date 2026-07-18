@@ -1,10 +1,13 @@
-// Phase 1: Multi-word phrases & idioms (parsed first to prevent
-// individual word collisions from scrambling idiomatic meaning)
-const JIVE_PHRASES: [string, string][] = [
+import { HEPCAT_PHRASES, HEPCAT_WORDS } from "./jiveDictionary";
+
+// Curated idioms — these take priority over the generated Hepcat dictionary
+// so the core demo sentences always translate the same way.
+const CURATED_PHRASES: [string, string][] = [
   ["give me a break", "cut me some slack, Jack"],
   ["what is going on", "what's the buzz"],
   ["everything is fine", "everything is kopasetic"],
   ["what are you doing", "what's your story"],
+  ["what are you up to", "what's your story, morning glory"],
   ["wants to know", "is itchin' to get hip to"],
   ["i understand", "i got my boots on"],
   ["do you understand", "ya dig"],
@@ -12,14 +15,16 @@ const JIVE_PHRASES: [string, string][] = [
   ["good night", "lay some Zs"],
   ["get out of here", "take a powder"],
   ["dressed up", "togged to the bricks"],
+  ["going to work", "off to the gig"],
+  ["in a hurry", "with the gas on"],
   ["making money", "grabbing some heavy iron"],
   ["shaking hands", "laying some skin"]
 ];
 
-// Phase 2: Individual token mapping
-const JIVE_WORDS: { [key: string]: string } = {
-  // People & Roles
+// Curated single tokens — also take priority over the Hepcat dictionary.
+const CURATED_WORDS: Record<string, string> = {
   "hello": "what's shakin'",
+  "hi": "hey daddy-o",
   "friend": "gate",
   "friends": "gates",
   "man": "cat",
@@ -33,8 +38,6 @@ const JIVE_WORDS: { [key: string]: string } = {
   "stewardess": "flight canary",
   "musician": "alligator",
   "people": "folks",
-
-  // Actions & Verbs
   "understand": "dig",
   "know": "get hip to",
   "talk": "beat up the chops",
@@ -52,8 +55,6 @@ const JIVE_WORDS: { [key: string]: string } = {
   "see": "spy",
   "eat": "peck",
   "dance": "hop",
-
-  // Adjectives, Descriptions & Places
   "good": "kopasetic",
   "great": "the tops",
   "cool": "righteous",
@@ -77,8 +78,8 @@ const JIVE_FLAVOR_SUFFIXES = [
   ", straight up."
 ];
 
-// Deterministic hash so the live-rendered output stays stable while typing
-// (a Math.random() suffix would flicker on every keystroke)
+// Deterministic hash keeps every choice stable while the user types —
+// a Math.random() pick would reshuffle the output on each keystroke.
 function hashText(text: string): number {
   let hash = 0;
   for (let i = 0; i < text.length; i++) {
@@ -87,45 +88,115 @@ function hashText(text: string): number {
   return Math.abs(hash);
 }
 
+function escapeRegex(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function matchCase(source: string, translation: string): string {
+  if (source.length > 1 && source === source.toUpperCase()) {
+    return translation.toUpperCase();
+  }
+  if (source.charAt(0) === source.charAt(0).toUpperCase()) {
+    return translation.charAt(0).toUpperCase() + translation.slice(1);
+  }
+  return translation;
+}
+
+// Phase 1 table: curated idioms first (they win on key collisions), then
+// every multi-word English phrase inverted from the Hepcat dictionary.
+// Longest phrases match first so "beautiful girl" beats "girl".
+const PHRASE_TABLE: { regex: RegExp; options: string[] }[] = (() => {
+  const merged = new Map<string, string[]>();
+  for (const [english, jive] of CURATED_PHRASES) {
+    merged.set(english, [jive]);
+  }
+  for (const [english, options] of Object.entries(HEPCAT_PHRASES)) {
+    if (!merged.has(english)) merged.set(english, options);
+  }
+  return Array.from(merged.entries())
+    .sort((a, b) => b[0].length - a[0].length)
+    .map(([english, options]) => ({
+      regex: new RegExp(`\\b${escapeRegex(english)}\\b`, "gi"),
+      options
+    }));
+})();
+
+function lookupWord(word: string): string | undefined {
+  if (CURATED_WORDS[word]) return CURATED_WORDS[word];
+  const options = HEPCAT_WORDS[word];
+  if (options) return options[hashText(word) % options.length];
+  // plural fallback: "trumpets" -> translate "trumpet", re-pluralize
+  if (word.endsWith("s")) {
+    const singular = word.slice(0, -1);
+    const base =
+      CURATED_WORDS[singular] ??
+      HEPCAT_WORDS[singular]?.[hashText(singular) % HEPCAT_WORDS[singular].length];
+    if (base) {
+      if (base.includes(" ")) return base;
+      return /[^aeiou]y$/.test(base) ? base.slice(0, -1) + "ies" : base + "s";
+    }
+  }
+  return undefined;
+}
+
+function capitalizeSentences(text: string): string {
+  return text.replace(
+    /(^|[.!?]\s+|\n\s*)([a-z])/g,
+    (_, boundary: string, letter: string) => boundary + letter.toUpperCase()
+  );
+}
+
 export function translateToJive(englishText: string): string {
   if (!englishText.trim()) return "";
 
-  // Normalize input while protecting core sentence architecture
-  let workingText = englishText.toLowerCase();
-
-  // Phase 1: Translate multi-word phrases/idioms first via regex pattern matching
-  for (const [englishPhrase, jivePhrase] of JIVE_PHRASES) {
-    const regex = new RegExp(`\\b${englishPhrase}\\b`, "g");
-    workingText = workingText.replace(regex, jivePhrase);
+  // Phase 1: multi-word phrases/idioms via regex pattern matching.
+  // Matches are parked behind placeholders so phase 2 can't re-translate
+  // words inside an already-translated phrase.
+  const parked: string[] = [];
+  let workingText = englishText;
+  for (const { regex, options } of PHRASE_TABLE) {
+    workingText = workingText.replace(regex, (match) => {
+      const jive = options[hashText(match.toLowerCase()) % options.length];
+      parked.push(matchCase(match, jive));
+      return `\x00${parked.length - 1}\x00`;
+    });
   }
 
-  // Phase 2: Split into tokens (keeping whitespace and punctuation intact
-  // so the sentence rebuilds in its original order and spacing)
-  const words = workingText.split(/(\s+|\b)/);
-  const translatedWords = words.map((token) => {
-    const cleanToken = token.toLowerCase().trim();
-    if (JIVE_WORDS[cleanToken]) {
-      return JIVE_WORDS[cleanToken];
-    }
-    return token;
-  });
+  // Phase 2: individual tokens, keeping whitespace and punctuation intact
+  // so the sentence rebuilds in its original order and spacing.
+  const translated = workingText
+    .split(/(\s+)/)
+    .map((token) => {
+      if (/^\s*$/.test(token) || token.includes("\x00")) return token;
+      const core = token.match(/[a-zA-Z][a-zA-Z'-]*/)?.[0];
+      if (!core) return token;
+      const jive = lookupWord(core.toLowerCase());
+      if (!jive) return token;
+      return token.replace(core, matchCase(core, jive));
+    })
+    .join("");
 
-  let result = translatedWords.join("");
+  // Restore parked phrase translations
+  let result = translated.replace(/\x00(\d+)\x00/g, (_, i) => parked[+i]);
 
-  // Clean up any double spaces or broken formatting from regex splits
-  result = result.replace(/[^\S\n]+/g, " ").trim();
+  // Tidy spacing without collapsing line breaks
+  result = result
+    .split("\n")
+    .map((line) => line.replace(/[^\S\n]+/g, " ").trim())
+    .join("\n");
 
-  // Capitalize sentence start
-  result = result.charAt(0).toUpperCase() + result.slice(1);
+  // Phase 3: deterministic flavor suffix on longer lines
+  result = result
+    .split("\n")
+    .map((line) => {
+      const wordCount = line.split(/\s+/).filter(Boolean).length;
+      const seed = hashText(line);
+      if (wordCount > 5 && seed % 5 > 1 && !/[?!]$/.test(line)) {
+        return line.replace(/\.$/, "") + JIVE_FLAVOR_SUFFIXES[seed % JIVE_FLAVOR_SUFFIXES.length];
+      }
+      return line;
+    })
+    .join("\n");
 
-  // Phase 3: Contextual flavor suffix on longer sentences
-  const seed = hashText(englishText.trim());
-  if (words.length > 5 && seed % 5 > 1) {
-    const flavor = JIVE_FLAVOR_SUFFIXES[seed % JIVE_FLAVOR_SUFFIXES.length];
-    if (!result.endsWith("?") && !result.endsWith("!")) {
-      result = result.replace(/\.$/, "") + flavor;
-    }
-  }
-
-  return result;
+  return capitalizeSentences(result);
 }
