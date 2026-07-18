@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { Check, Copy, Music4, Sparkles } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Check, Copy, KeyRound, Loader2, Music4, Sparkles } from "lucide-react";
 import { translateToJive } from "@/lib/jiveTranslator";
 
 const TEST_SENTENCES = [
@@ -11,11 +11,38 @@ const TEST_SENTENCES = [
   "He got dressed up and left the house to see the musician."
 ];
 
+const DEBOUNCE_MS = 700;
+
 export default function Home() {
   const [englishText, setEnglishText] = useState("");
+  const [githubToken, setGithubToken] = useState("");
+  const [jiveText, setJiveText] = useState("");
+  const [isTranslating, setIsTranslating] = useState(false);
   const [copied, setCopied] = useState(false);
+  const requestIdRef = useRef(0);
 
-  const jiveText = useMemo(() => translateToJive(englishText), [englishText]);
+  useEffect(() => {
+    if (!englishText.trim()) {
+      requestIdRef.current += 1;
+      setJiveText("");
+      setIsTranslating(false);
+      return;
+    }
+
+    const requestId = ++requestIdRef.current;
+    setIsTranslating(true);
+
+    const timer = setTimeout(async () => {
+      const result = await translateToJive(englishText, githubToken);
+      // Ignore this response if a newer request has since superseded it
+      if (requestIdRef.current === requestId) {
+        setJiveText(result);
+        setIsTranslating(false);
+      }
+    }, DEBOUNCE_MS);
+
+    return () => clearTimeout(timer);
+  }, [englishText, githubToken]);
 
   const handleCopy = async () => {
     if (!jiveText) return;
@@ -30,7 +57,7 @@ export default function Home() {
 
   return (
     <main className="mx-auto flex min-h-screen max-w-6xl flex-col px-4 py-10 sm:px-8">
-      <header className="mb-10 text-center">
+      <header className="mb-8 text-center">
         <div className="mb-3 inline-flex items-center gap-3 rounded-full border border-zinc-800 bg-zinc-900 px-4 py-1.5 text-sm text-amber-400">
           <Music4 className="h-4 w-4" />
           Est. 1977 &mdash; Strictly Kopasetic
@@ -42,11 +69,40 @@ export default function Home() {
           Lay down your square English and watch it come back smooth, cat.
           <br />
           <span className="text-sm text-zinc-500">
-            Powered by the 1945 <em>Hepcats Jive Talk Dictionary</em> &mdash; over a
-            thousand authentic words &amp; phrases.
+            Powered by an AI model via GitHub Models &mdash; bring your own token.
           </span>
         </p>
       </header>
+
+      <section className="mx-auto mb-8 w-full max-w-2xl rounded-2xl border border-zinc-800 bg-zinc-900/60 p-5">
+        <label htmlFor="github-token" className="mb-2 flex items-center gap-2 text-sm font-semibold uppercase tracking-widest text-zinc-400">
+          <KeyRound className="h-4 w-4 text-amber-400" />
+          GitHub Personal Access Token
+        </label>
+        <input
+          id="github-token"
+          type="password"
+          autoComplete="off"
+          value={githubToken}
+          onChange={(e) => setGithubToken(e.target.value)}
+          placeholder="Paste a token scoped only for GitHub Models"
+          className="w-full rounded-xl border border-zinc-800 bg-zinc-950 p-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-amber-500/60 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+        />
+        <p className="mt-2 text-xs leading-relaxed text-zinc-500">
+          Kept in memory only for this page load &mdash; never saved to disk, cookies, or
+          browser storage, and cleared on refresh. Use a fine-grained token scoped to
+          the minimum permissions GitHub Models requires, not a broad classic PAT. See{" "}
+          <a
+            href="https://docs.github.com/en/github-models/quickstart"
+            target="_blank"
+            rel="noreferrer"
+            className="underline hover:text-amber-400"
+          >
+            GitHub&apos;s Models quickstart
+          </a>{" "}
+          for current setup steps.
+        </p>
+      </section>
 
       <section className="grid flex-1 gap-6 lg:grid-cols-2">
         {/* English input */}
@@ -68,8 +124,9 @@ export default function Home() {
         {/* Jive output */}
         <div className="flex flex-col rounded-2xl border border-zinc-800 bg-zinc-900/60 p-5">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-semibold uppercase tracking-widest text-zinc-400">
+            <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-widest text-zinc-400">
               Jive Talk
+              {isTranslating && <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-400" />}
             </h2>
             <button
               onClick={handleCopy}
