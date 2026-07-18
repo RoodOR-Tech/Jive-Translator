@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Check, Copy, KeyRound, Loader2, Music4, Sparkles } from "lucide-react";
 import { translateToJive } from "@/lib/jiveTranslator";
 
@@ -11,38 +11,22 @@ const TEST_SENTENCES = [
   "He got dressed up and left the house to see the musician."
 ];
 
-const DEBOUNCE_MS = 700;
-
 export default function Home() {
   const [englishText, setEnglishText] = useState("");
-  const [githubToken, setGithubToken] = useState("");
+  const [geminiApiKey, setGeminiApiKey] = useState("");
   const [jiveText, setJiveText] = useState("");
   const [isTranslating, setIsTranslating] = useState(false);
   const [copied, setCopied] = useState(false);
-  const requestIdRef = useRef(0);
-
-  useEffect(() => {
-    if (!englishText.trim()) {
-      requestIdRef.current += 1;
-      setJiveText("");
-      setIsTranslating(false);
-      return;
-    }
-
-    const requestId = ++requestIdRef.current;
+  const handleTranslate = async () => {
+    if (!englishText.trim() || isTranslating) return;
     setIsTranslating(true);
-
-    const timer = setTimeout(async () => {
-      const result = await translateToJive(englishText, githubToken);
-      // Ignore this response if a newer request has since superseded it
-      if (requestIdRef.current === requestId) {
-        setJiveText(result);
-        setIsTranslating(false);
-      }
-    }, DEBOUNCE_MS);
-
-    return () => clearTimeout(timer);
-  }, [englishText, githubToken]);
+    try {
+      const result = await translateToJive(englishText, geminiApiKey);
+      setJiveText(result);
+    } finally {
+      setIsTranslating(false);
+    }
+  };
 
   const handleCopy = async () => {
     if (!jiveText) return;
@@ -69,36 +53,36 @@ export default function Home() {
           Lay down your square English and watch it come back smooth, cat.
           <br />
           <span className="text-sm text-zinc-500">
-            Powered by an AI model via GitHub Models &mdash; bring your own token.
+            Powered by Gemini &mdash; bring your own API key.
           </span>
         </p>
       </header>
 
       <section className="mx-auto mb-8 w-full max-w-2xl rounded-2xl border border-zinc-800 bg-zinc-900/60 p-5">
-        <label htmlFor="github-token" className="mb-2 flex items-center gap-2 text-sm font-semibold uppercase tracking-widest text-zinc-400">
+        <label htmlFor="gemini-api-key" className="mb-2 flex items-center gap-2 text-sm font-semibold uppercase tracking-widest text-zinc-400">
           <KeyRound className="h-4 w-4 text-amber-400" />
-          GitHub Personal Access Token
+          Gemini API Key
         </label>
         <input
-          id="github-token"
+          id="gemini-api-key"
           type="password"
           autoComplete="off"
-          value={githubToken}
-          onChange={(e) => setGithubToken(e.target.value)}
-          placeholder="Paste a token scoped only for GitHub Models"
+          value={geminiApiKey}
+          onChange={(e) => setGeminiApiKey(e.target.value)}
+          placeholder="Paste your Gemini API key"
           className="w-full rounded-xl border border-zinc-800 bg-zinc-950 p-3 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-amber-500/60 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
         />
         <p className="mt-2 text-xs leading-relaxed text-zinc-500">
           Kept in memory only for this page load &mdash; never saved to disk, cookies, or
-          browser storage, and cleared on refresh. Use a fine-grained token scoped to
-          the minimum permissions GitHub Models requires, not a broad classic PAT. See{" "}
+          browser storage, and cleared on refresh. Use a key restricted to the Gemini
+          API, and never commit it to this repository. Get or manage a key in{" "}
           <a
-            href="https://docs.github.com/en/github-models/quickstart"
+            href="https://aistudio.google.com/app/apikey"
             target="_blank"
             rel="noreferrer"
             className="underline hover:text-amber-400"
           >
-            GitHub&apos;s Models quickstart
+            Google AI Studio
           </a>{" "}
           for current setup steps.
         </p>
@@ -119,6 +103,24 @@ export default function Home() {
             placeholder="Type something square, like &quot;Hello friend, what is going on?&quot;"
             className="min-h-[16rem] flex-1 resize-none rounded-xl border border-zinc-800 bg-zinc-950 p-4 text-lg leading-relaxed text-zinc-100 placeholder:text-zinc-600 focus:border-amber-500/60 focus:outline-none focus:ring-2 focus:ring-amber-500/20"
           />
+          <button
+            type="button"
+            onClick={handleTranslate}
+            disabled={!englishText.trim() || isTranslating}
+            className="mt-4 inline-flex items-center justify-center gap-2 rounded-xl bg-amber-400 px-4 py-3 font-semibold text-zinc-950 transition-colors hover:bg-amber-300 disabled:cursor-not-allowed disabled:bg-zinc-800 disabled:text-zinc-600"
+          >
+            {isTranslating ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Translating...
+              </>
+            ) : (
+              <>
+                <Sparkles className="h-4 w-4" />
+                Translate to Jive
+              </>
+            )}
+          </button>
         </div>
 
         {/* Jive output */}
